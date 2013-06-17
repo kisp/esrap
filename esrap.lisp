@@ -226,8 +226,8 @@ for use with IGNORE."
       (values lambda-list start end gensyms))))
 
 (deftype nonterminal ()
-  "Any symbol except CHARACTER and NIL can be used as a nonterminal symbol."
-  '(and symbol (not (member character nil))))
+  "Any symbol except CHARACTER, READ and NIL can be used as a nonterminal symbol."
+  '(and symbol (not (member character read nil))))
 
 (deftype terminal ()
   "Literal strings and characters are used as case-sensitive terminal symbols,
@@ -932,6 +932,8 @@ inspection."
   (or (typecase expression
         ((eql character)
          t)
+        ((eql read)
+         t)
         (terminal
          t)
         (nonterminal
@@ -1005,6 +1007,8 @@ inspection."
   (typecase expression
     ((eql character)
      (eval-character text position end))
+    ((eql read)
+     (eval-read text position end))
     (terminal
      (if (consp expression)
          (eval-terminal (string (second expression)) text position end nil)
@@ -1044,6 +1048,8 @@ inspection."
   (etypecase expression
     ((eql character)
      (compile-character))
+    ((eql read)
+     (compile-read))
     (terminal
      (if (consp expression)
          (compile-terminal (string (second expression)) nil)
@@ -1509,6 +1515,25 @@ inspection."
   (with-expression (expression (character-ranges &rest ranges))
     (named-lambda compiled-character-ranges (text position end)
       (exec-character-ranges expression ranges text position end))))
+
+;;; Read
+
+(defun eval-read (text position end)
+  (handler-case
+      (multiple-value-bind (value position)
+          (read-from-string text t nil
+                            :start position
+                            :end end
+                            :preserve-whitespace t)
+        (make-result
+         :production value
+         :position position))
+    (error () (make-failed-parse
+               :expression 'read
+               :position position))))
+
+(defun compile-read ()
+  #'eval-read)
 
 (defvar *indentation-hint-table* nil)
 
