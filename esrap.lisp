@@ -272,13 +272,13 @@ for use with IGNORE."
       (values lambda-list start end gensyms))))
 
 (deftype nonterminal ()
-  "Any symbol except CHARACTER and NIL can be used as a nonterminal symbol."
-  '(and symbol (not (member character nil))))
+  "Any symbol except CHARACTER, READ and NIL can be used as a nonterminal symbol."
+  '(and symbol (not (member character read nil))))
 
 (deftype terminal ()
   "Literal strings and characters are used as case-sensitive terminal symbols,
 and expressions of the form \(~ <literal>) denote case-insensitive terminals."
-  '(or string character
+  '(or string character (eql read)
        (cons (eql ~) (cons (or string character) null))))
 
 (deftype character-range ()
@@ -296,6 +296,7 @@ characters."
     `((character              . (eql character))
       (character-ranges       . (cons (eql character-ranges)))
       (string                 . (cons (eql string) (cons array-length null)))
+      (read                   . (eql read))
       (and                    . (cons (eql and)))
       (or                     . (cons (eql or)))
       ,@(mapcar (lambda (symbol)
@@ -1175,7 +1176,7 @@ but clause heads designate kinds of expressions instead of types. See
   (labels
       ((rec (expression)
          (expression-case expression
-           ((character string terminal nonterminal))
+           ((character string read terminal nonterminal))
            (character-ranges
             (unless (every (of-type 'character-range) (rest expression))
               (invalid-expression-error expression)))
@@ -1185,7 +1186,7 @@ but clause heads designate kinds of expressions instead of types. See
 
 (defun %expression-dependencies (expression seen)
   (expression-case expression
-    ((character string character-ranges terminal)
+    ((character string read character-ranges terminal)
      seen)
     (nonterminal
      (if (member expression seen :test #'eq)
@@ -1203,7 +1204,7 @@ but clause heads designate kinds of expressions instead of types. See
 
 (defun %expression-direct-dependencies (expression seen)
   (expression-case expression
-    ((character string character-ranges terminal)
+    ((character string read character-ranges terminal)
      seen)
     (nonterminal
      (cons expression seen))
@@ -1217,6 +1218,8 @@ but clause heads designate kinds of expressions instead of types. See
   (expression-case expression
     (character
      (eval-character text position end))
+    (read
+     (eval-read text position end))
     (terminal
      (if (consp expression)
          (eval-terminal (string (second expression)) text position end nil)
@@ -1249,6 +1252,7 @@ but clause heads designate kinds of expressions instead of types. See
 (defun compile-expression (expression)
   (expression-case expression
     (character        (compile-character))
+    (read             (compile-read))
     (terminal         (if (consp expression)
                           (compile-terminal (string (second expression)) nil)
                           (compile-terminal (string expression) t)))
@@ -1695,6 +1699,25 @@ but clause heads designate kinds of expressions instead of types. See
   (with-expression (expression (character-ranges &rest ranges))
     (named-lambda compiled-character-ranges (text position end)
       (exec-character-ranges expression ranges text position end))))
+
+;;; Read
+
+(defun eval-read (text position end)
+  (handler-case
+      (multiple-value-bind (value position)
+          (read-from-string text t nil
+                            :start position
+                            :end end
+                            :preserve-whitespace t)
+        (make-result
+         :production value
+         :position position))
+    (error () (make-failed-parse
+               :expression 'read
+               :position position))))
+
+(defun compile-read ()
+  #'eval-read)
 
 (defvar *indentation-hint-table* nil)
 
